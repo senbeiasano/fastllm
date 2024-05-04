@@ -9,6 +9,7 @@ from collections import Counter
 import time, io, multiprocessing
 total_origin_size = 0
 total_compress_size = 0
+thread_num = os.environ('THREAD_NUM') if 'THREAD_NUM' in os.environ else 4
 
 def writeString(fo, s):
     bytes = s.encode()
@@ -90,7 +91,8 @@ def write_l2(fo, v):
     compress_size = 0
 
     # 多线程
-    thread_num = 4
+    # thread_num = 4
+    print(f'Processing {insize} symbols')
     print(f'Using {thread_num} threads')
     fo.write(struct.pack('i', thread_num))
     thread_pool = multiprocessing.Pool(thread_num)
