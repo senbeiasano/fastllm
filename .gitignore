@@ -35,3 +35,7 @@ token
 /models/
 /localtest/
 /third_party/tfacc/driver/tfacc2/result
+*flm
+__pycache__
+test.bin
+.DS_Store

@@ -4,6 +4,11 @@ import numpy as np
 import torch
 from transformers import PreTrainedTokenizerFast
 from tokenizers.decoders import ByteLevel
+from tools.fastllm_pytools.RangeEncoder import RangeEncoder, range_encode
+from collections import Counter
+import time, io, multiprocessing
+total_origin_size = 0
+total_compress_size = 0
 
 def writeString(fo, s):
     bytes = s.encode()
@@ -20,6 +25,7 @@ fastllm_data_type_dict = {
     "int8": 3,
     "float16": 7,
     "float32": 0,
+    "l2": 1
 }
 fastllm_weight_type_dict = {
     "linear": 1,
@@ -32,6 +38,101 @@ temp = v;
 c_max = np.expand_dims(np.abs(v).max(axis = -1), -1)
 c_scale = c_max / 127.0
 v = (v / c_scale + 128.5).clip(1, 255).astype(np.uint8)
+
+def range_encode(data, data2index, prob, insize):
+    buf=bytearray(1)
+    buffer = io.BytesIO()
+
+    enc=RangeEncoder(True)
+    for inpos in range(insize + 1):
+        print(f'Processing {inpos}/{insize}', end='\r')
+        if inpos < insize:
+			# Encode a symbol.
+            symbol = data[inpos]
+            byte = data2index[symbol]
+            enc.encode(prob[byte], prob[byte + 1], prob[-1])
+        else:
+            enc.finish()
+		# While the encoder has bytes to output, output.
+        while enc.hasbyte():
+            buf[0]=enc.getbyte()
+            buffer.write(buf)
+    # print(buffer.getbuffer().nbytes)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def write_l2(fo, v):
+    clock = time.time()
+    global total_origin_size, total_compress_size
+    fo.write(struct.pack('i', 1))
+    
+    data = v.flatten()
+    count = Counter(data)
+    count = dict(sorted(count.items()))
+    count_len = len(count)
+    fo.write(struct.pack('i', count_len))
+
+    data2index = {}
+    index2data = [None] * count_len
+    prob = [0] * (count_len + 1)
+    i = 0
+    for key, value in count.items():
+        index2data[i] = key
+        data2index[key] = i
+        prob[i+1] = value + prob[i]
+        i += 1
+    # write index and prob
+    for i in range(count_len):
+        fo.write(struct.pack('f', index2data[i]))
+        fo.write(struct.pack('i', prob[i+1]))
+
+    insize = data.size
+    compress_size = 0
+
+    # 多线程
+    thread_num = 4
+    print(f'Using {thread_num} threads')
+    fo.write(struct.pack('i', thread_num))
+    thread_pool = multiprocessing.Pool(thread_num)
+    args = []
+    for i in range(thread_num):
+        start = i * insize // thread_num
+        end = (i + 1) * insize // thread_num
+        args.append((data[start:end], data2index, prob, end - start))
+    
+    with thread_pool as pool:
+        results = pool.starmap(range_encode, args)
+        for result in results:
+            compress_size += len(result)
+            fo.write(struct.pack('i', len(result)))
+            fo.write(result)
+
+    # # 单线程
+    # buf=bytearray(1)
+    # enc=RangeEncoder(True)
+    # for inpos in range(insize + 1):
+    #     print(f'Processing {inpos}/{insize}', end='\r')
+    #     if inpos<insize:
+	# 		# Encode a symbol.
+    #         symbol = data[inpos]
+    #         byte = data2index[symbol]
+    #         enc.encode(prob[byte], prob[byte + 1], prob[-1])
+    #     else:
+    #         enc.finish()
+	# 	# While the encoder has bytes to output, output.
+    #     while enc.hasbyte():
+    #         compress_size += 1
+    #         buf[0]=enc.getbyte()
+    #         fo.write(buf)
+    
+    clock = time.time() - clock
+    print(f'Compression time: {clock:.2f}s')
+    print(f'The size of the input data is: {insize * 2 / 1024 ** 2} MB')
+    print(f'The size of the byte stream is: {compress_size / 1024 ** 2} MB')
+    total_origin_size += insize * 2
+    total_compress_size += compress_size
+    print(f'The size of the input data is: {total_origin_size / 1024 ** 2} MB')
+    print(f'The size of the byte stream is: {total_compress_size / 1024 ** 2} MB')
 
 def write_int8(fo, v):
     c_max = np.expand_dims(np.abs(v).max(axis = -1), -1).clip(0.1, 1e100)
@@ -314,7 +415,7 @@ def tofile(exportPath,
         ori_np_data_type = np.float32
         cur_weight_type = 0
         if (key in weight_type_dict and weight_type_dict[key] in fastllm_weight_type_dict):
-            cur_weight_type = fastllm_weight_type_dict[weight_type_dict[key]]
+            cur_weight_type = fastllm_weight_type_dict[weight_type_dict[key]] # 1: linear, 2: embedding
         to_data_type = 0
 
         if (cur_weight_type == 1):
@@ -329,6 +430,7 @@ def tofile(exportPath,
         if hasattr(model, "peft_config"):
             weight_name = weight_name.replace('base_model.model.', '')
         writeString(fo, weight_name)
+        print(weight_name)
         fo.write(struct.pack('i', len(cur.shape)))
         for i in cur.shape:
             fo.write(struct.pack('i', i))
@@ -338,6 +440,8 @@ def tofile(exportPath,
             write_int4(fo, cur)
         elif (to_data_type == 9):
             write_int4g(fo, cur, groupCnt = int4g_groupcnt)
+        elif (to_data_type == 1):
+            write_l2(fo, cur)
         else:
             fo.write(struct.pack('i', to_data_type))
             fo.write(cur.data)

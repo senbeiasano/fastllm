@@ -1,10 +1,10 @@
 import sys
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from fastllm_pytools import torch2flm
+from tools.fastllm_pytools import torch2flm
 
 if __name__ == "__main__":
-    modelNameOrPath = sys.argv[3] if len(sys.argv) >= 4 else 'qwen/Qwen1.5-7B-Chat'
+    modelNameOrPath = sys.argv[3] if len(sys.argv) >= 4 else '/Users/shiyumeng/Workspace/ms_thesis/model/llama2-7b-4x'
     tokenizer = AutoTokenizer.from_pretrained(modelNameOrPath, trust_remote_code=True);
     # `torch_dtype=torch.float16` is set by default, if it will not cause an OOM Error, you can load model in float32.
     model = AutoModelForCausalLM.from_pretrained(modelNameOrPath, trust_remote_code=True, torch_dtype=torch.float16)
