@@ -9,7 +9,7 @@ from collections import Counter
 import time, io, multiprocessing
 total_origin_size = 0
 total_compress_size = 0
-thread_num = os.environ('THREAD_NUM') if 'THREAD_NUM' in os.environ else 4
+thread_num = os.environ['THREAD_NUM'] if 'THREAD_NUM' in os.environ else 4
 
 def writeString(fo, s):
     bytes = s.encode()
