@@ -112,10 +112,11 @@ def write_l2(fo, v):
     # enc=RangeEncoder(True)
     # for inpos in range(insize + 1):
     #     print(f'Processing {inpos}/{insize}', end='\r')
-    #     if inpos<insize:
+    #     if inpos < insize:
 	# 		# Encode a symbol.
     #         symbol = data[inpos]
     #         byte = data2index[symbol]
+    #         print(byte)
     #         enc.encode(prob[byte], prob[byte + 1], prob[-1])
     #     else:
     #         enc.finish()

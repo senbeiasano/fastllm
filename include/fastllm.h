@@ -171,7 +171,8 @@ namespace fastllm {
     };
 
     enum DataType {
-        FLOAT32 = 0, BFLOAT16 = 1, INT16 = 2, INT8 = 3, INT4 = 4, INT2 = 5, BIT = 6, FLOAT16 = 7,
+        // FLOAT32 = 0, BFLOAT16 = 1, INT16 = 2, INT8 = 3, INT4 = 4, INT2 = 5, BIT = 6, FLOAT16 = 7,
+        FLOAT32 = 0, L2 = 1, INT16 = 2, INT8 = 3, INT4 = 4, INT2 = 5, BIT = 6, FLOAT16 = 7, BFLOAT16 = 10,
         INT4_NOZERO = 8, // 不用zeroPoint的int4, floatValue = min + uint4Value * scale
         INT4_GROUP = 9, // 不用zeroPoint的int4, floatValue = min + uint4Value * scale, 且使用分组量化
         INT32PARAM = 100 // int32的参数，这种类型的数据永远存在CPU上
@@ -259,6 +260,12 @@ namespace fastllm {
         std::vector <float> scales, mins;
         std::vector <int> zeros;
         std::vector <int> weightSum; // 作为权重时，有时候需要存一些和加速计算
+
+        // 以下参数用于L2
+        int l2_num = -1;
+        std::vector<uint32_t> l2_probs;
+        std::vector<float> index2data;
+        int thread_num = -1;
 
         std::string name; // weightName
         std::string fileName;

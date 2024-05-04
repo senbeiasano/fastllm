@@ -138,7 +138,11 @@ namespace fastllm {
     std::unique_ptr<fastllm::basellm> CreateLLMModelFromFile(const std::string &fileName) {
         std::string modelType = GetModelTypeFromFile(fileName);
         basellm *model = CreateModelWithType(modelType);
+#ifdef DEBUG
+        printf("[End create model!]\n");
+#endif
         model->LoadFromFile(fileName);
+        // std::exit(0); // [TODO] 记得注释
         model->WarmUp();
         return std::unique_ptr<fastllm::basellm> (model);
     }

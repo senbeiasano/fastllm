@@ -1,5 +1,6 @@
 //
 // Created by huangyuyang on 5/11/23.
+// Modified by senbei on 5/04/24.
 //
 
 #include "utils.h"
@@ -8,11 +9,14 @@
 
 #include "executor.h"
 
+#include "range.h"
+
 #include <cstring>
 #include <cmath>
 #include <cfloat>
 #include <thread>
 #include <algorithm>
+#include <ctime>
 
 #ifdef USE_MMAP
 #include <sys/mman.h>
@@ -1567,11 +1571,16 @@ namespace fastllm {
             }
             tokenizer.SetSpecialTokens(specialTokens);
         }
-
+#ifdef DEBUG
+        printf("[Begin to load weights!]\n");
+#endif
         int len = buffer.ReadInt();
+        // len = 2; // [TODO] 记得注释
         for (int i = 0; i < len; i++) {
             std::string name = buffer.ReadString();
-            //printf("%s\n", name.c_str());
+#ifdef DEBUG
+            printf("weight name is: %s\n", name.c_str());
+#endif
             int dimsSize = buffer.ReadInt();
             //printf("size = %d\n", dimsSize);
             std::vector <int> dims;
@@ -1581,7 +1590,17 @@ namespace fastllm {
                 //printf("%d\n", x);
             }
             DataType dataType = (DataType)buffer.ReadInt();
-            weight[name] = Data(dataType, dims);
+            if (dataType == DataType::L2) {
+                int l2_num = buffer.ReadInt();
+                if (l2_num <= 256) {
+                    weight[name] = Data(DataType::INT8, dims);
+                } else {
+                    weight[name] = Data(DataType::INT16, dims);
+                }
+                weight[name].l2_num = l2_num; // 之后记得判断l2_num是不是-1来进行计算选择
+            } else {
+                weight[name] = Data(dataType, dims);
+            }
             weight[name].name = name;
 
             if (lowMemMode && this->embeddingNames.find(name) != this->embeddingNames.end()) {
@@ -1678,6 +1697,69 @@ namespace fastllm {
                     curWeight.cpuData = buffer.ReadBytes(curWeight.GetBytes());
 #else
                     buffer.ReadBytes(curWeight.cpuData, curWeight.GetBytes());
+#endif
+                } else if (dataType == DataType::L2) {
+#ifdef DEBUG
+                    clock_t start = clock();
+#endif
+                    int size = 1;
+                    for (int i = 0; i < dimsSize; i++) {
+                        size = size * dims[i];
+#ifdef DEBUG
+                        printf("weight dim %d is: %d\n", i, dims[i]);
+#endif
+                    }
+                    auto &curWeight = weight[name];
+                    curWeight.l2_probs.push_back(0);
+                    for (int i = 0; i < curWeight.l2_num; i++) {
+                        curWeight.index2data.push_back(buffer.ReadFloat());
+                        curWeight.l2_probs.push_back(buffer.ReadInt());
+#ifdef DEBUG
+                        printf("symbol [%i] index2data is: %f and l2_probs is %d\n", i, curWeight.index2data[i], curWeight.l2_probs[i + 1]);
+#endif
+                    }
+                    curWeight.thread_num = buffer.ReadInt();
+                    std::vector<int> chunk_size;
+                    std::vector<uint8_t*> chunk_buffer;
+                    for (int i = 0; i < curWeight.thread_num; i++) {
+                        chunk_size.push_back(buffer.ReadInt());
+                        uint8_t* chunk = (uint8_t*)malloc(chunk_size[i]);
+                        buffer.ReadBytes(chunk, chunk_size[i]);
+                        chunk_buffer.push_back(chunk);
+#ifdef DEBUG
+                        printf("chunk size is %d\n", chunk_size[i]);
+#endif
+                    }
+
+                    std::vector<std::thread> threads;
+                    for (int i = 0; i < curWeight.thread_num; i++) {
+                        int stride = 1;
+                        if (curWeight.l2_num > 256) {
+                            stride = 2;
+                        }
+                        int chunk_num = size / curWeight.thread_num; // 每个chunk的实际数据量
+                        int offset = i * (chunk_num * stride); // cpuData的偏移
+                        auto params = std::make_tuple(chunk_buffer[i], chunk_size[i], curWeight.cpuData + offset, chunk_num, curWeight.l2_num, curWeight.l2_probs.data());
+                        
+                        threads.emplace_back([params]() {
+                            range_decode(std::get<0>(params), std::get<1>(params), std::get<2>(params), std::get<3>(params), std::get<4>(params), std::get<5>(params));
+                        });
+                    }
+                    for (int i = 0; i < curWeight.thread_num; i++) {
+                        threads[i].join();
+                    }
+#ifdef DEBUG
+                    for (int i = 0; i < 100; i++) {
+                        printf("cpuData[%d] is %d\n", i, ((uint8_t*)curWeight.cpuData)[i]);
+                    }
+#endif
+                    
+                    for (int i = 0; i < curWeight.thread_num; i++) {
+                        free(chunk_buffer[i]);
+                    }
+#ifdef DEBUG
+                    clock_t end = clock();
+                    printf("L2 decompress time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
 #endif
                 }
             }
