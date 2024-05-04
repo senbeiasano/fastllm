@@ -419,7 +419,7 @@ def tofile(exportPath,
             cur_weight_type = fastllm_weight_type_dict[weight_type_dict[key]] # 1: linear, 2: embedding
         to_data_type = 0
 
-        if (cur_weight_type == 1):
+        if (cur_weight_type == 1) and ('lm_head' not in key):
             to_data_type = fastllm_data_type_dict[dtype]
             if (to_data_type == 7):
                 ori_data_type = 7

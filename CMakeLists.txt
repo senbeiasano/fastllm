@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.5)
 
 project(fastllm LANGUAGES CXX)
 
-add_definitions(-DDEBUG)
+if (CMAKE_CXX_FLAGS MATCHES "-output")
+    add_definitions(-DDEBUG)
+endif()
 
 option(USE_CUDA "use CUDA" OFF)
 option(CUDA_NO_TENSOR_CORE "Optimize for legacy CUDA GPUs which has Tensor Core." OFF)

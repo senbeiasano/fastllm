@@ -1709,13 +1709,16 @@ namespace fastllm {
                         printf("weight dim %d is: %d\n", i, dims[i]);
 #endif
                     }
+#ifdef DEBUG
+                    printf("weight size is: %d\n", size);
+#endif
                     auto &curWeight = weight[name];
                     curWeight.l2_probs.push_back(0);
                     for (int i = 0; i < curWeight.l2_num; i++) {
                         curWeight.index2data.push_back(buffer.ReadFloat());
                         curWeight.l2_probs.push_back(buffer.ReadInt());
 #ifdef DEBUG
-                        printf("symbol [%i] index2data is: %f and l2_probs is %d\n", i, curWeight.index2data[i], curWeight.l2_probs[i + 1]);
+                        // printf("symbol [%i] index2data is: %f and l2_probs is %d\n", i, curWeight.index2data[i], curWeight.l2_probs[i + 1]);
 #endif
                     }
                     curWeight.thread_num = buffer.ReadInt();
@@ -1727,7 +1730,7 @@ namespace fastllm {
                         buffer.ReadBytes(chunk, chunk_size[i]);
                         chunk_buffer.push_back(chunk);
 #ifdef DEBUG
-                        printf("chunk size is %d\n", chunk_size[i]);
+                        // printf("chunk size is %d\n", chunk_size[i]);
 #endif
                     }
 
@@ -1738,6 +1741,9 @@ namespace fastllm {
                             stride = 2;
                         }
                         int chunk_num = size / curWeight.thread_num; // 每个chunk的实际数据量
+#ifdef DEBUG
+                        printf("chunknum is: %d\n", chunk_num);
+#endif
                         int offset = i * (chunk_num * stride); // cpuData的偏移
                         auto params = std::make_tuple(chunk_buffer[i], chunk_size[i], curWeight.cpuData + offset, chunk_num, curWeight.l2_num, curWeight.l2_probs.data());
                         
@@ -1749,9 +1755,9 @@ namespace fastllm {
                         threads[i].join();
                     }
 #ifdef DEBUG
-                    for (int i = 0; i < 100; i++) {
-                        printf("cpuData[%d] is %d\n", i, ((uint8_t*)curWeight.cpuData)[i]);
-                    }
+                    // for (int i = 0; i < 100; i++) {
+                    //     printf("cpuData[%d] is %d\n", i, ((uint8_t*)curWeight.cpuData)[i]);
+                    // }
 #endif
                     
                     for (int i = 0; i < curWeight.thread_num; i++) {
@@ -1759,7 +1765,7 @@ namespace fastllm {
                     }
 #ifdef DEBUG
                     clock_t end = clock();
-                    printf("L2 decompress time: %f\n", (double)(end - start) / CLOCKS_PER_SEC);
+                    printf("L2 decompress time: %f s\n", (double)(end - start) / CLOCKS_PER_SEC);
 #endif
                 }
             }
