@@ -266,6 +266,7 @@ namespace fastllm {
         std::vector<uint32_t> l2_probs;
         std::vector<float> index2data;
         int thread_num = -1;
+        int size = -1;
 
         std::string name; // weightName
         std::string fileName;

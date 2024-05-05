@@ -1534,8 +1534,30 @@ namespace fastllm {
 //auto st = std::chrono::system_clock::now();
         Data &input = *(datas.find("input")->second);
         Data &output = *(datas.find("output")->second);
-        Data &weight = *(datas.find("weight")->second);
+        // Data &weight = *(datas.find("weight")->second);
+        Data *weight_ptr = datas.find("weight")->second;
+        std::shared_ptr<Data> weight_sp;
         Data &bias = *(datas.find("bias")->second);
+
+        if (weight_ptr->l2_num != -1) {    
+            // 构造新的权重
+            weight_sp = std::make_shared<Data>(DataType::FLOAT32, weight_ptr->dims);
+            weight_sp->Allocate();
+            float* data_ptr = (float*)weight_sp->cpuData;
+            if (weight_ptr->dataType == DataType::INT8) {
+                uint8_t *index_ptr = (uint8_t *) weight_ptr->cpuData;
+                for (int i = 0; i < weight_ptr->size; i++) {
+                    data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                }
+            } else {
+                uint16_t *index_ptr = (uint16_t *) weight_ptr->cpuData;
+                for (int i = 0; i < weight_ptr->size; i++) {
+                    data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                }
+            }
+            weight_ptr = weight_sp.get();
+        }
+        Data &weight = *weight_ptr;
 
         output.Allocate(0.0f);
         int n = input.Count(0) / input.dims.back();
@@ -1874,6 +1896,10 @@ namespace fastllm {
             }
         } else {
             ErrorInFastLLM("Linear error: unsupport weight's dataType.\n");
+        }
+
+        if (weight_ptr->l2_num != -1) {
+            delete[] weight.cpuData;
         }
 //float spend = GetSpan(st, std::chrono::system_clock::now());
 //float gops = (float)n * m * k / spend / 1e9;
