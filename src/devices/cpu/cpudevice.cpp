@@ -346,6 +346,13 @@ namespace fastllm {
         Float32ToFloat16(fod.data(), od, (int)fod.size());
     }
 
+    template<typename T>
+    void findWeight(float *data, T *index, std::vector<float> &index2data, int st, int end) {
+        for (int i = st; i < end; i++) {
+            data[i] = index2data[index[i]];
+        }
+    }
+
     void CpuAttention::Run(const std::string &opType, const fastllm::DataDict &datas,
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &q = *(datas.find("q")->second);
@@ -1544,16 +1551,34 @@ namespace fastllm {
             weight_sp = std::make_shared<Data>(DataType::FLOAT32, weight_ptr->dims);
             weight_sp->Allocate();
             float* data_ptr = (float*)weight_sp->cpuData;
+
+            int threadNum = GetThreads();
+            int per = weight_ptr->size / threadNum;
+            auto pool = GetPool();
+            std::vector<std::future<void> > futures;
             if (weight_ptr->dataType == DataType::INT8) {
                 uint8_t *index_ptr = (uint8_t *) weight_ptr->cpuData;
-                for (int i = 0; i < weight_ptr->size; i++) {
-                    data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                for (int i = 0; i < threadNum; i++) {
+                    int st = i * per;
+                    int end = (i == threadNum - 1 ? weight_ptr->size : st + per);
+                    futures.push_back(pool->Submit(findWeight<uint8_t>, data_ptr, index_ptr, weight_ptr->index2data, st, end));
                 }
+                // for (int i = 0; i < weight_ptr->size; i++) {
+                //     data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                // }
             } else {
                 uint16_t *index_ptr = (uint16_t *) weight_ptr->cpuData;
-                for (int i = 0; i < weight_ptr->size; i++) {
-                    data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                for (int i = 0; i < threadNum; i++) {
+                    int st = i * per;
+                    int end = (i == threadNum - 1 ? weight_ptr->size : st + per);
+                    futures.push_back(pool->Submit(findWeight<uint16_t>, data_ptr, index_ptr, weight_ptr->index2data, st, end));
                 }
+                // for (int i = 0; i < weight_ptr->size; i++) {
+                //     data_ptr[i] = weight_ptr->index2data[index_ptr[i]];
+                // }
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                futures[i].get();
             }
             weight_ptr = weight_sp.get();
         }
